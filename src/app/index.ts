@@ -16,6 +16,8 @@
 
 import path = require('path');
 import Base = require('yeoman-generator');
+var download = require('download');
+const fs = require('fs-extra');
 
 enum ExtensionType {
     HelloWorld = 'hello-world',
@@ -23,7 +25,8 @@ enum ExtensionType {
     LabelProvider = 'labelprovider',
     TreeEditor = 'tree-editor',
     Empty = 'empty',
-    Backend = 'backend'
+    Backend = 'backend',
+    DiagramEditor = 'diagram-editor'
 }
 
 module.exports = class TheiaExtension extends Base {
@@ -145,17 +148,63 @@ module.exports = class TheiaExtension extends Base {
             const answer = await this.prompt({
                 type: 'list',
                 name: 'type',
-                message: "The extension's type",
+                message: 'The extension\'s type',
                 choices: [
                     { value: ExtensionType.HelloWorld, name: 'Hello World' },
                     { value: ExtensionType.Widget, name: 'Widget' },
                     { value: ExtensionType.LabelProvider, name: 'LabelProvider' },
                     { value: ExtensionType.TreeEditor, name: 'TreeEditor' },
                     { value: ExtensionType.Backend, name: 'Backend Communication' },
-                    { value: ExtensionType.Empty, name: 'Empty' }
+                    { value: ExtensionType.Empty, name: 'Empty' },
+                    { value: ExtensionType.DiagramEditor, name: 'DiagramEditor' }
                 ]
             });
             (this.options as any).extensionType = answer.type;
+
+            if (answer.type === ExtensionType.DiagramEditor) {
+                let glspNodes = [];
+                let count = 1;
+                this.log('The generated example contains one minimal node.');
+                const ans = await this.prompt([
+                    {
+                        type: 'confirm',
+                        name: 'more',
+                        message: 'Would you like to add another custom node?'
+                    }
+                ]);
+                let moreNodes = ans.more;
+                while (moreNodes) {
+                    const answers = await this.prompt([
+                        {
+                            type: 'input',
+                            name: 'name',
+                            message: `Your ${count}. custom node's name`
+                        },
+                        {
+                            type: 'list',
+                            name: 'shape',
+                            message: 'Your node\'s shape',
+                            choices: [
+                                { value: 'RectangularNode', name: 'Rectangle' },
+                                { value: 'CircularNode', name: 'Circle' },
+                                { value: 'DiamondNode', name: 'Diamond' }
+                            ]
+                        },
+                        {
+                            type: 'confirm',
+                            name: 'more',
+                            message: 'Would you like to add another node?'
+                        }
+                    ]);
+                    moreNodes = answers.more;
+                    glspNodes.push({
+                        name: answers.name,
+                        shape: answers.shape
+                    });
+                    count++;
+                }
+                (this.options as any).glspNodes = glspNodes;
+            }
         }
 
         let extensionName = (this.options as any).extensionName;
@@ -163,7 +212,7 @@ module.exports = class TheiaExtension extends Base {
             const answer = await this.prompt({
                 type: 'input',
                 name: 'name',
-                message: "The extension's name",
+                message: 'The extension\'s name',
                 default: path.parse(process.cwd()).name
             });
             (this.options as any).extensionName = answer.name;
@@ -201,11 +250,9 @@ module.exports = class TheiaExtension extends Base {
             this.params.browserDevDependencies = '';
         }
         options.params = this.params
-        if (!options.standalone) {
-            if ((options).browser)
-                this.composeWith(require.resolve('../browser'), this.options);
-            if ((options).electron)
-                this.composeWith(require.resolve('../electron'), this.options);
+        if (!options.standalone && this.params.extensionType !== ExtensionType.DiagramEditor) {
+            if (options.browser) this.composeWith(require.resolve('../browser'), this.options);
+            if (options.electron) this.composeWith(require.resolve('../electron'), this.options);
         }
         if (options.standalone) {
             options.skipInstall = true;
@@ -214,46 +261,48 @@ module.exports = class TheiaExtension extends Base {
     }
 
     writing() {
-        if (!this.options.standalone) {
-            /** common templates */
-            this.fs.copyTpl(
-                this.templatePath('root-package.json'),
-                this.destinationPath('package.json'),
-                { params: this.params }
-            );
-            this.fs.copyTpl(
-                this.templatePath('lerna.json'),
-                this.destinationPath('lerna.json'),
-                { params: this.params }
-            );
-            this.fs.copyTpl(
-                this.templatePath('gitignore'),
-                this.destinationPath('.gitignore'),
-                { params: this.params }
-            );
-            this.fs.copyTpl(
-                this.templatePath('README.md'),
-                this.destinationPath('README.md'),
-                { params: this.params }
-            )
-            if (this.params.vscode) {
+        if (this.params.extensionType !== ExtensionType.DiagramEditor) {
+            if (!this.options.standalone) {
+                /** common templates */
                 this.fs.copyTpl(
-                    this.templatePath('launch.json'),
-                    this.destinationPath('.vscode/launch.json'),
+                    this.templatePath('root-package.json'),
+                    this.destinationPath('package.json'),
                     { params: this.params }
-                )
+                );
+                this.fs.copyTpl(
+                    this.templatePath('lerna.json'),
+                    this.destinationPath('lerna.json'),
+                    { params: this.params }
+                );
+                this.fs.copyTpl(
+                    this.templatePath('gitignore'),
+                    this.destinationPath('.gitignore'),
+                    { params: this.params }
+                );
+                this.fs.copyTpl(
+                    this.templatePath('README.md'),
+                    this.destinationPath('README.md'),
+                    { params: this.params }
+                );
+                if (this.params.vscode) {
+                    this.fs.copyTpl(
+                        this.templatePath('launch.json'),
+                        this.destinationPath('.vscode/launch.json'),
+                        { params: this.params }
+                    );
+                }
             }
+            this.fs.copyTpl(
+                this.templatePath('extension-package.json'),
+                this.extensionPath('package.json'),
+                { params: this.params }
+            );
+            this.fs.copyTpl(
+                this.templatePath('tsconfig.json'),
+                this.extensionPath('tsconfig.json'),
+                { params: this.params }
+            );
         }
-        this.fs.copyTpl(
-            this.templatePath('extension-package.json'),
-            this.extensionPath('package.json'),
-            { params: this.params }
-        );
-        this.fs.copyTpl(
-            this.templatePath('tsconfig.json'),
-            this.extensionPath('tsconfig.json'),
-            { params: this.params }
-        );
 
         /** hello-world */
         if (this.params.extensionType === ExtensionType.HelloWorld) {
@@ -404,6 +453,90 @@ module.exports = class TheiaExtension extends Base {
             );
         }
 
+        /** DiagramEditor */
+        if (this.params.extensionType === ExtensionType.DiagramEditor) {
+            var done = this.async();
+            download('https://github.com/eclipse-glsp/glsp-examples/archive/master.tar.gz', 'tmp', {
+                extract: true
+            }).then(() => {
+                fs.copy('./tmp/glsp-examples-master/README.md', './README.md');
+                fs.copy('./tmp/glsp-examples-master/minimal', './').then(() => {
+                    let glspModuleImport = '';
+                    let glspModuleBind = '';
+                    let diConfig = '';
+                    this.options.glspNodes.forEach((node: { name: string; shape: string }, index: number) => {
+                        // Create New Node Operation Handler File
+                        const capNode = this._capitalize(node.name);
+                        fs.readFile(
+                            './server/org.eclipse.glsp.example.minimal/src/main/java/org/eclipse/glsp/example/minimal/handler/MinimalCreateNodeOperationHandler.java',
+                            'utf8',
+                            (err: any, data: String) => {
+                                var result = data
+                                    .toString()
+                                    .replace(
+                                        /MinimalCreateNodeOperationHandler/g,
+                                        `MinimalCreate${capNode}NodeOperationHandler`
+                                    )
+                                    .replace(/minimal-node/g, `${node.name.toLowerCase()}-node`)
+                                    .replace(/Minimal Node/g, `${capNode} Node`)
+                                    .replace(/DefaultTypes.NODE/g, `"${node.name.toLowerCase()}-node"`);
+                                fs.writeFile(
+                                    `./server/org.eclipse.glsp.example.minimal/src/main/java/org/eclipse/glsp/example/minimal/handler/MinimalCreate${capNode}NodeOperationHandler.java`,
+                                    result
+                                );
+                            }
+                        );
+                        glspModuleBind += `      binding.add(MinimalCreate${capNode}NodeOperationHandler.class);\n`;
+                        glspModuleImport += `import org.eclipse.glsp.example.minimal.handler.MinimalCreate${capNode}NodeOperationHandler;\n`;
+                        diConfig += `    configureModelElement(context, '${node.name.toLowerCase()}-node', ${
+                            node.shape
+                        }, ${node.shape}View);\n`;
+                    });
+
+                    // Add node bindings to MinimalGLSPModule
+                    fs.readFile(
+                        './server/org.eclipse.glsp.example.minimal/src/main/java/org/eclipse/glsp/example/minimal/MinimalGLSPModule.java',
+                        (err: any, data: String) => {
+                            var lines = data.toString().split('\n');
+                            lines.splice(36, 0, glspModuleBind);
+                            lines.splice(18, 0, glspModuleImport);
+                            var result = lines.join('\n');
+                            fs.writeFile(
+                                './server/org.eclipse.glsp.example.minimal/src/main/java/org/eclipse/glsp/example/minimal/MinimalGLSPModule.java',
+                                result
+                            );
+                        }
+                    );
+
+                    // Add nodes to frontend
+                    let nodeTypes = '';
+                    if (
+                        this.options.glspNodes.filter(
+                            (node: { name: string; shape: string }) => node.shape === 'CircularNode'
+                        ).length > 0
+                    ) {
+                        nodeTypes += '    CircularNode,\n    CircularNodeView,';
+                    }
+                    if (
+                        this.options.glspNodes.filter(
+                            (node: { name: string; shape: string }) => node.shape === 'DiamondNode'
+                        ).length > 0
+                    ) {
+                        nodeTypes += '\n    DiamondNode,\n    DiamondNodeView,';
+                    }
+                    fs.readFile('./client/minimal-glsp/src/di.config.ts', (err: any, data: String) => {
+                        var lines = data.toString().split('\n');
+                        lines.splice(60, 0, diConfig);
+                        lines.splice(44, 0, nodeTypes);
+                        var result = lines.join('\n');
+                        fs.writeFile('./client/minimal-glsp/src/di.config.ts', result);
+                    });
+
+                    fs.rmdirSync('./tmp', { recursive: true });
+                    done();
+                });
+            });
+        }
     }
 
     protected extensionPath(...paths: string[]) {
@@ -412,6 +545,22 @@ module.exports = class TheiaExtension extends Base {
 
     install() {
         if (!(this.options as any).skipInstall) {
+            if (this.params.extensionType == ExtensionType.DiagramEditor) {
+                this.log('Installing dependencies');
+
+                this.spawnCommandSync('mvn', ['clean', 'install'], {
+                    cwd: 'server/org.eclipse.glsp.example.minimal'
+                });
+
+                this.spawnCommandSync('yarn', [], {
+                    cwd: 'client'
+                });
+
+                this.log(
+                    '\nThe DiagramEditor Example has been generated and all dependencies installed\n\nIn order to launch the DiagramEditor project run:\n  cd client\n  yarn start:browser'
+                );
+            }
+        } else {
             var command = this.spawnCommand('yarn', []);
 
             command.on('close', function(code: number){
